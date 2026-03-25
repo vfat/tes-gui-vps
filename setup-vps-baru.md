@@ -803,3 +803,220 @@ Sekarang udah ada → jail bisa hidup → server lo mulai punya “refleks”.
 Pelan-pelan, dari server polos ke server yang agak susah diganggu.
 
 
+---
+
+Akhirnya ada yang mikirin swap juga. Jarang-jarang orang inget sebelum server nge-lag terus panik.
+
+Gue tambahin ke summary lo, biar lengkap dan gak keliatan kayak setup setengah jadi:
+
+---
+
+# 🧱 INFRASTRUCTURE SUMMARY (VPS SETUP)
+
+## 🌐 Domain & Web
+
+* Domain: `vqf.my.id`
+* DNS:
+
+  * `A @ → 43.159.34.85`
+  * `A www → 43.159.34.85`
+* Web server: **Nginx**
+* Root: `/var/www/app`
+* HTTPS: pakai Certbot (Let’s Encrypt)
+* Auto redirect HTTP → HTTPS ✔️
+
+---
+
+## 🔐 Security Layer
+
+### 🔥 Firewall (UFW)
+
+* Allow:
+
+  * `80` (HTTP)
+  * `443` (HTTPS)
+  * `51820/udp` (WireGuard)
+* SSH:
+
+  * hanya dari VPN (`10.0.0.0/24`)
+  * public access → blocked
+
+---
+
+### 🚫 Fail2ban
+
+* Proteksi basic nginx
+* Custom filter `nginx-badbots`
+* Ban IP abusive
+* Log:
+
+  ```
+  /var/log/nginx/access.log
+  ```
+
+---
+
+## 🔑 VPN (WireGuard)
+
+### Server
+
+* Interface: `wg0`
+* Network: `10.0.0.0/24`
+* IP: `10.0.0.1`
+* Port: `51820`
+* NAT via `eth0`
+
+### Client (Android)
+
+* App: WireGuard
+* IP: `10.0.0.2`
+* Endpoint:
+
+  ```
+  vqf.my.id:51820
+  ```
+* AllowedIPs:
+
+  ```
+  0.0.0.0/0
+  ```
+
+---
+
+## 🔐 Access Control
+
+* SSH hanya via VPN ✔️
+* Password login disabled ✔️
+* Root login disabled ✔️
+* SFTP:
+
+  * optional
+  * hanya via VPN
+
+---
+
+## 🚀 Deployment
+
+* Utama: Git (`git pull`)
+* SSH key untuk repo access
+* SFTP hanya fallback
+
+---
+
+## 📊 Monitoring & Logs
+
+* Nginx:
+
+  ```
+  /var/log/nginx/access.log
+  ```
+* Fail2ban:
+
+  ```
+  /var/log/fail2ban.log
+  ```
+* WireGuard:
+
+  ```
+  sudo wg
+  ```
+
+---
+
+## ⚙️ System Settings
+
+### IP Forwarding
+
+```
+net.ipv4.ip_forward=1
+```
+
+### Logrotate
+
+* aktif untuk nginx ✔️
+
+---
+
+## 💾 Swap Configuration
+
+### Yang lo lakukan:
+
+```bash
+# Matikan swap lama
+sudo swapoff /swap.img
+
+# Hapus swap lama
+sudo rm /swap.img
+
+# Buat swap baru 4GB
+sudo fallocate -l 4G /swap.img
+
+# Permission aman
+sudo chmod 600 /swap.img
+
+# Format & aktifkan
+sudo mkswap /swap.img
+sudo swapon /swap.img
+```
+
+### ⚠️ Tambahan penting (ini yang sering kelupaan)
+
+Biar permanen setelah reboot:
+
+```bash
+sudo nano /etc/fstab
+```
+
+Tambah:
+
+```
+/swap.img none swap sw 0 0
+```
+
+Kalau gak:
+
+> tiap reboot swap lo hilang, terus lo bingung kenapa RAM tiba-tiba sekarat
+
+---
+
+## 🧠 Architecture
+
+```
+Internet
+   ↓
+[Firewall]
+   ↓
+[Nginx + HTTPS]
+   ↓
+[App]
+
+Private:
+Client → WireGuard → VPS → Internal Access
+```
+
+---
+
+## 💀 FINAL STATE
+
+Server lo sekarang:
+
+* Web live ✔️
+* HTTPS ✔️
+* VPN ✔️
+* Secure SSH ✔️
+* Git deploy ✔️
+* Swap memory ✔️
+
+Status:
+
+> “udah layak dipakai, gak cuma buat pamer setup di Discord”
+
+---
+
+Ini udah solid banget buat personal / small production.
+Kalau nanti lo ngerasa pengen “naik level” lagi… biasanya penyakitnya mulai:
+
+> monitoring, automation, sama paranoia security 😌
+
+
+
