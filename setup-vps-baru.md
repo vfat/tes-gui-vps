@@ -227,4 +227,579 @@ intinya sekarang VPS lo udah:
 * siap jadi backend API / web
 * ga langsung jadi ladang crypto miner orang lain
 
-lumayan lah, buat langkah pertama elo ga bikin dosa besar 😌
+---
+## SETUP DOMAIN
+
+Ya terus kalau semua itu udah bener tapi domain masih bengong gak mau kebuka, berarti kita masuk fase klasik: **“gue yakin semua udah bener, tapi ternyata ada yang kelewat”**.
+
+Cek satu-satu, jangan sok yakin dulu:
+
+### 1. Test langsung IP
+
+Coba buka:
+
+```
+http://43.159.34.85
+```
+
+* Kalau ini **gak kebuka** → masalah di server (nginx lo bohong soal “udah nyala”)
+* Kalau **kebuka** → lanjut
+
+### 2. DNS resolve
+
+Di lokal:
+
+```
+ping vqf.my.id
+```
+
+atau:
+
+```
+dig vqf.my.id +short
+```
+
+Harus keluar:
+
+```
+43.159.34.85
+```
+
+* Kalau belum → DNS belum propagate / salah record
+* Kalau udah → lanjut
+
+### 3. Nginx config (ini yang sering bikin malu)
+
+Lo udah set `server_name` belum?
+
+Contoh minimal:
+
+```nginx
+server {
+    listen 80;
+    server_name vqf.my.id www.vqf.my.id;
+
+    root /var/www/html;
+    index index.html;
+}
+```
+
+Terus:
+
+```
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+Kalau `server_name` gak cocok:
+
+> nginx bakal fallback ke default config → domain lo di-ignore kayak mantan.
+
+### 4. Firewall layer lain
+
+Lo bilang port kebuka, tapi:
+
+* Cloud provider (Tencent? AWS? dll) ada **security group**
+* Cek juga:
+
+```
+sudo ufw status
+```
+
+### 5. Coba curl dari luar
+
+```
+curl -I http://vqf.my.id
+```
+
+Kalau timeout:
+
+> berarti masih kehalang di network, bukan nginx
+
+---
+
+Kesimpulan cepat:
+
+* IP bisa diakses → DNS atau nginx config
+* IP gak bisa diakses → server / firewall
+
+Kalau semua ini udah lo cek dan masih gagal, berarti semesta lagi ngajarin lo satu hal:
+**“DevOps itu bukan soal bener, tapi soal sabar ngelacak kebodohan kecil.”**
+
+
+Config lo… surprisingly… gak jelek. Langka sih.
+
+Tapi ada beberapa titik rawan yang biasanya bikin orang stuck sambil nyalahin DNS:
+
+---
+
+### 🔍 1. Pastikan config ini KEPAKE
+
+Kadang orang bikin config cakep tapi… gak di-load. Classic.
+
+Cek:
+
+```bash
+ls /etc/nginx/sites-enabled/
+```
+
+Harus ada file yang isinya config lo (biasanya symlink dari `sites-available`).
+
+Kalau belum:
+
+```bash
+sudo ln -s /etc/nginx/sites-available/namafile /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+Kalau gak, nginx lo literally ignore config ini.
+
+---
+
+### 🔍 2. Default server nyolong request lo
+
+Kalau ada config default kayak:
+
+```nginx
+server {
+    listen 80 default_server;
+    ...
+}
+```
+
+Dia bisa “nangkep” semua request duluan.
+
+Solusi:
+
+* Hapus / disable default config:
+
+```bash
+sudo rm /etc/nginx/sites-enabled/default
+sudo systemctl reload nginx
+```
+
+---
+
+### 🔍 3. Folder `/var/www/app` beneran ada?
+
+Ini sering banget:
+
+```bash
+ls /var/www/app
+```
+
+Harus ada `index.html`.
+
+Kalau gak:
+
+> ya jelas 404, bukan karena nginx jahat, tapi karena lo nyuruh dia cari sesuatu yang gak ada.
+
+---
+
+### 🔍 4. Permission (silent killer)
+
+Kalau permission salah, nginx gak bisa baca file:
+
+```bash
+sudo chown -R www-data:www-data /var/www/app
+sudo chmod -R 755 /var/www/app
+```
+
+---
+
+### 🔍 5. Test langsung dari server (biar gak drama DNS)
+
+Di VPS lo:
+
+```bash
+curl -H "Host: vqf.my.id" http://127.0.0.1
+```
+
+* Kalau ini **berhasil** → nginx config OK → masalah DNS / network
+* Kalau **gagal** → config lo masih salah
+
+---
+
+### 🔍 6. DNS double check (iya, lagi)
+
+Kadang orang typo 1 digit terus denial:
+
+```bash
+dig vqf.my.id +short
+```
+
+Harus:
+
+```
+43.159.34.85
+```
+
+---
+
+### Kesimpulan jujur:
+
+Setup lo udah 80% bener.
+Sisanya biasanya salah di:
+
+* config gak di-enable
+* default server ganggu
+* atau folder kosong (ini paling nyakitin)
+
+Kalau masih gak jalan setelah ini, berarti masalahnya bukan teknis lagi…
+tapi ego manusia yang terlalu cepat bilang “udah bener kok”.
+
+
+Nah ini nih… klasik banget. Bukan error “misterius”, ini error **lo kelupaan satu hal obvious**.
+
+### 💥 Intinya:
+
+```
+NXDOMAIN looking up A for www.vqf.my.id
+```
+
+Artinya:
+
+> **`www.vqf.my.id` itu gak ada di DNS. Kosong. Nol. Nihil.**
+
+Lo cuma bikin:
+
+```
+vqf.my.id → 43.159.34.85
+```
+
+Tapi:
+
+```
+www.vqf.my.id → ??? (tidak diketahui alam semesta)
+```
+
+---
+
+## 🔧 Solusi (simple banget, serius)
+
+Balik ke DNS, tambah salah satu:
+
+### Opsi 1 (paling umum)
+
+```
+Type: A
+Name: www
+Value: 43.159.34.85
+```
+
+---
+
+### Opsi 2 (lebih “rapih”)
+
+```
+Type: CNAME
+Name: www
+Value: vqf.my.id
+```
+
+---
+
+## 🤦 Kenapa ini kejadian?
+
+Karena lo tadi di nginx tulis:
+
+```nginx
+server_name vqf.my.id www.vqf.my.id;
+```
+
+Terus pas certbot:
+
+> dia coba verify **DUA domain itu**
+
+Satu ada → lolos
+Satu gak ada → gagal total
+
+Certbot itu gak kompromi. Satu gagal, semua ikut tenggelam.
+
+---
+
+## 🚀 Setelah nambah DNS:
+
+Tunggu bentar (biasanya cepet, gak perlu drama 48 jam), lalu:
+
+```bash
+sudo certbot --nginx
+```
+
+---
+
+## 🔥 Shortcut kalau lo males ngurus www
+
+Kalau lo tipe orang yang hidupnya minimalis:
+
+```bash
+sudo certbot --nginx -d vqf.my.id
+```
+
+Jadi cuma 1 domain.
+
+---
+
+## Kesimpulan pahit:
+
+Lo gak salah konfigurasi server.
+Lo cuma lupa bahwa:
+
+> subdomain itu bukan “otomatis ada karena feeling”.
+
+DNS itu literal banget. Gak ada → ya gak ada.
+
+Sekarang tinggal tambahin `www`, beres. Internet berhenti nge-judge lo.
+
+---
+
+## 🧱 1. Install certbot + nginx plugin
+
+Di Ubuntu:
+
+```bash
+sudo apt update
+sudo apt install certbot python3-certbot-nginx -y
+```
+
+---
+
+## 🔍 2. Pastikan domain udah resolve
+
+Ini WAJIB. Jangan sok lanjut kalau ini belum:
+
+```bash
+dig vqf.my.id +short
+```
+
+Harus keluar:
+
+```
+43.159.34.85
+```
+
+Kalau belum → balik ke DNS, jangan maksa. Certbot bukan dukun.
+
+---
+
+## ⚙️ 3. Jalankan certbot
+
+Simple mode (yang paling waras):
+
+```bash
+sudo certbot --nginx
+```
+
+Nanti dia bakal:
+
+* detect config nginx lo
+* nanya domain → pilih `vqf.my.id` + `www.vqf.my.id`
+* auto generate SSL
+* auto edit config nginx
+
+Lo tinggal pilih:
+
+* redirect HTTP → HTTPS → **pilih YES** (biar gak setengah-setengah hidup lo)
+
+---
+
+## 🧪 4. Test hasilnya
+
+Buka:
+
+```
+https://vqf.my.id
+```
+
+Kalau berhasil:
+
+> selamat, sekarang traffic lo terenkripsi, walaupun isinya cuma index.html kosong.
+
+---
+
+## 🔄 5. Auto renew (biar gak panik 3 bulan lagi)
+
+Certbot biasanya udah setup cron, tapi ya kita gak percaya sistem tanpa bukti:
+
+```bash
+sudo certbot renew --dry-run
+```
+
+Kalau sukses → aman.
+
+---
+
+## ⚠️ Problem yang sering muncul
+
+Biar lo gak pura-pura bingung nanti:
+
+### ❌ Port 80 gak bisa diakses
+
+Certbot butuh HTTP challenge.
+Kalau fail:
+
+> berarti firewall / security group masih bohong
+
+---
+
+### ❌ Nginx config gak ke-detect
+
+Biasanya karena:
+
+* `server_name` gak sesuai
+* config belum di-enable
+
+---
+
+### ❌ Domain belum propagate
+
+Error klasik:
+
+> "Could not resolve host"
+
+Ya… karena DNS lo belum nyampe.
+
+---
+
+## 🧠 Insight biar lo naik level dikit
+
+Certbot itu basically:
+
+1. prove ke CA kalau lo punya domain
+2. dapet cert
+3. pasang ke nginx
+
+Bukan magic. Cuma automation yang nyelamatin lo dari ribet.
+
+---
+
+Nah, akhirnya jelas.
+Bukan “fail2ban error”, tapi emang:
+
+> **file filternya gak ada, jadi jail lo gak mungkin exist.**
+
+Lo lagi nyuruh satpam nangkep maling… tapi lo gak kasih dia definisi maling itu apa.
+
+---
+
+## 🔧 Fix langsung (gak pake drama)
+
+### 1. Bikin filter `nginx-badbots`
+
+```bash
+sudo nano /etc/fail2ban/filter.d/nginx-badbots.conf
+```
+
+Isi ini:
+
+```ini
+[Definition]
+failregex = <HOST> -.*"(GET|POST).*HTTP.*" 403
+ignoreregex =
+```
+
+Ini artinya:
+
+> kalau ada IP kena 403 berulang → dianggap bot aneh → ban
+
+Simple, tapi cukup buat mulai.
+
+---
+
+## ⚙️ 2. Daftarin jail-nya
+
+Edit:
+
+```bash
+sudo nano /etc/fail2ban/jail.local
+```
+
+Tambahin:
+
+```ini
+[nginx-badbots]
+enabled = true
+port = http,https
+filter = nginx-badbots
+logpath = /var/log/nginx/access.log
+maxretry = 5
+bantime = 1h
+```
+
+---
+
+## 🔄 3. Restart (ini wajib, bukan opsional)
+
+```bash
+sudo systemctl restart fail2ban
+```
+
+---
+
+## 🧪 4. Cek lagi
+
+```bash
+sudo fail2ban-client status
+```
+
+Harusnya sekarang muncul:
+
+```
+Jail list: nginx-badbots
+```
+
+---
+
+## 🧠 Real talk dikit
+
+Filter yang barusan lo bikin itu:
+
+* basic banget
+* belum “pinter”
+* tapi cukup buat ngeban scanner receh
+
+Kalau lo liat log nanti banyak request kayak:
+
+* `/wp-login.php`
+* `/phpmyadmin`
+* `/vendor/phpunit`
+
+Itu semua bot internet yang lagi “ngetok pintu random”.
+
+Dan sekarang:
+
+> lo gak cuma buka pintu… tapi mulai milih siapa yang boleh masuk
+
+---
+
+## ⚠️ Bonus biar gak jadi jebakan batman
+
+Pastikan file ini ada:
+
+```bash
+ls /var/log/nginx/access.log
+```
+
+Kalau gak ada / kosong:
+
+> fail2ban lo bakal kerja keras… untuk tidak melakukan apa-apa
+
+---
+
+## Kesimpulan
+
+Masalah lo kemarin:
+
+* bukan config salah
+* bukan command salah
+
+Tapi:
+
+> lo pakai fitur yang belum pernah lo install (atau bikin)
+
+Sekarang udah ada → jail bisa hidup → server lo mulai punya “refleks”.
+
+Pelan-pelan, dari server polos ke server yang agak susah diganggu.
+
+
